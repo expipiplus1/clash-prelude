@@ -1,4 +1,6 @@
-{-# LANGUAGE Safe #-}
+{-# LANGUAGE MagicHash #-}
+
+{-# LANGUAGE Trustworthy #-}
 
 {-|
   Copyright  :  (C) 2013-2015, University of Twente
@@ -22,9 +24,8 @@ module CLaSH.Prelude.Mealy
   )
 where
 
-import CLaSH.Signal          (Signal, Unbundled)
-import CLaSH.Signal.Explicit (Signal', SClock, register', systemClock)
-import CLaSH.Signal.Bundle   (Bundle (..), Unbundled')
+import CLaSH.Signal.Internal (Signal', SClock, register#)
+import CLaSH.Signal.Bundle   (Bundle (..))
 
 {- $setup
 >>> :set -XDataKinds
@@ -82,10 +83,12 @@ let mac s (x,y) = (s',s)
 mealy :: (s -> i -> (s,o)) -- ^ Transfer function in mealy machine form:
                            -- @state -> input -> (newstate,output)@
       -> s                 -- ^ Initial state
-      -> (Signal i -> Signal o)
+      -> (Signal' clk i -> Signal' clk o)
       -- ^ Synchronous sequential function with input and output matching that
       -- of the mealy machine
-mealy = mealy' systemClock
+mealy f iS = \i -> let (s',o) = unbundle $ f <$> s <*> i
+                       s      = register# iS s'
+                   in  o
 
 {-# INLINE mealyB #-}
 -- | A version of 'mealy' that does automatic 'Bundle'ing
@@ -118,10 +121,10 @@ mealyB :: (Bundle i, Bundle o)
        => (s -> i -> (s,o)) -- ^ Transfer function in mealy machine form:
                             -- @state -> input -> (newstate,output)@
        -> s                 -- ^ Initial state
-       -> (Unbundled i -> Unbundled o)
+       -> (Unbundled' clk i -> Unbundled' clk o)
        -- ^ Synchronous sequential function with input and output matching that
        -- of the mealy machine
-mealyB = mealyB' systemClock
+mealyB f iS i = unbundle (mealy f iS (bundle i))
 
 {-# INLINE (<^>) #-}
 -- | Infix version of 'mealyB'
@@ -129,7 +132,7 @@ mealyB = mealyB' systemClock
       => (s -> i -> (s,o)) -- ^ Transfer function in mealy machine form:
                            -- @state -> input -> (newstate,output)@
       -> s                 -- ^ Initial state
-      -> (Unbundled i -> Unbundled o)
+      -> (Unbundled' clk i -> Unbundled' clk o)
       -- ^ Synchronous sequential function with input and output matching that
       -- of the mealy machine
 (<^>) = mealyB
@@ -177,9 +180,7 @@ mealy' :: SClock clk        -- ^ 'Clock' to synchronize to
        -> (Signal' clk i -> Signal' clk o)
        -- ^ Synchronous sequential function with input and output matching that
        -- of the mealy machine
-mealy' clk f iS = \i -> let (s',o) = unbundle' clk $ f <$> s <*> i
-                            s      = register' clk iS s'
-                        in  o
+mealy' _ = mealy 
 
 {-# INLINE mealyB' #-}
 -- | A version of 'mealy'' that does automatic 'Bundle'ing
@@ -216,4 +217,4 @@ mealyB' :: (Bundle i, Bundle o)
         -> (Unbundled' clk i -> Unbundled' clk o)
         -- ^ Synchronous sequential function with input and output matching that
         -- of the mealy machine
-mealyB' clk f iS i = unbundle' clk (mealy' clk f iS (bundle' clk i))
+mealyB' _ = mealyB 

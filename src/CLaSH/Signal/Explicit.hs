@@ -30,7 +30,9 @@ module CLaSH.Signal.Explicit
   , register'
   , regEn'
     -- * Product/Signal isomorphism
-  , Bundle (..)
+  , Unbundled'
+  , bundle'
+  , unbundle'
     -- * Simulation functions (not synthesisable)
   , simulateB'
   )
@@ -301,7 +303,7 @@ repSchedule high low = take low $ repSchedule' low high 1
 -- >>> sampleN 3 (register' clkA 8 (fromList [1,2,3,4]))
 -- [8,1,2]
 register' :: SClock clk -> a -> Signal' clk a -> Signal' clk a
-register' = register#
+register' _ = register#
 
 {-# INLINE regEn' #-}
 -- | Version of 'register'' that only updates its content when its second
@@ -323,7 +325,39 @@ register' = register#
 -- >>> sampleN 8 count
 -- [0,0,1,1,2,2,3,3]
 regEn' :: SClock clk -> a -> Signal' clk Bool -> Signal' clk a -> Signal' clk a
-regEn' = regEn#
+regEn' _ = regEn#
+
+-- * Product/Signal isomorphism
+
+-- | Example:
+--
+-- @
+-- __bundle'__ :: 'SClock' clk -> ('Signal'' clk a, 'Signal'' clk b) -> 'Signal'' clk (a,b)
+-- @
+--
+-- However:
+--
+-- @
+-- __bundle'__ :: 'SClock clk' -> 'Signal'' clk 'CLaSH.Sized.BitVector.Bit' -> 'Signal'' clk 'CLaSH.Sized.BitVector.Bit'
+-- @
+bundle' :: Bundle a => SClock clk -> Unbundled' clk a -> Signal' clk a
+bundle' _ = bundle
+{-# INLINE bundle' #-}
+
+-- | Example:
+--
+-- @
+-- __unbundle'__ :: 'SClock' clk -> 'Signal'' clk (a,b) -> ('Signal'' clk a, 'Signal'' clk b)
+-- @
+--
+-- However:
+--
+-- @
+-- __unbundle'__ :: 'SClock' clk -> 'Signal'' clk 'CLaSH.Sized.BitVector.Bit' -> 'Signal'' clk 'CLaSH.Sized.BitVector.Bit'
+-- @
+unbundle' :: Bundle a => SClock clk -> Signal' clk a -> Unbundled' clk a
+unbundle' _ = unbundle
+{-# INLINE unbundle' #-}
 
 -- * Simulation functions
 
@@ -339,4 +373,4 @@ simulateB' :: (Bundle a, Bundle b)
            -> SClock clk2 -- ^ 'Clock' of the outgoing signal
            -> (Unbundled' clk1 a -> Unbundled' clk2 b) -- ^ Function to simulate
            -> [a] -> [b]
-simulateB' clk1 clk2 f = simulate (bundle' clk2 . f . unbundle' clk1)
+simulateB' _ _ f = simulate (bundle . f . unbundle)

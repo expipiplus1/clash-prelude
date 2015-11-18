@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -37,11 +36,9 @@ module CLaSH.Prelude.DataFlow
   )
 where
 
-import GHC.TypeLits          (KnownNat, KnownSymbol)
-
-import CLaSH.Signal          ((.&&.), regEn, unbundle)
+import CLaSH.Signal          ((.&&.), regEn)
 import CLaSH.Signal.Bundle   (Bundle (..))
-import CLaSH.Signal.Explicit (Clock (..), Signal', SystemClock, sclock)
+import CLaSH.Signal.Explicit (Signal', SystemClock)
 
 {- | Dataflow circuit with bidirectional synchronisation channels.
 
@@ -126,7 +123,7 @@ liftDF = DF
 -- "CLaSH.Prelude.Mealy"
 mealyDF :: (s -> i -> (s,o))
         -> s
-        -> DataFlow Bool Bool i o
+        -> DataFlow' clk Bool Bool i o
 mealyDF f iS = DF (\i iV oR -> let en     = iV .&&. oR
                                    (s',o) = unbundle (f <$> s <*> i)
                                    s      = regEn iS en s'
@@ -137,7 +134,7 @@ mealyDF f iS = DF (\i iV oR -> let en     = iV .&&. oR
 mooreDF :: (s -> i -> s)
         -> (s -> o)
         -> s
-        -> DataFlow Bool Bool i o
+        -> DataFlow' clk Bool Bool i o
 mooreDF ft fo iS = DF (\i iV oR -> let en  = iV .&&. oR
                                        s'  = ft <$> s <*> i
                                        s   = regEn iS en s'
@@ -165,24 +162,22 @@ seqDF :: DataFlow' clk aEn bEn a b
 -- the second halve unchanged.
 --
 -- <<doc/firstDF.svg>>
-firstDF :: (KnownSymbol nm, KnownNat rate)
-        => DataFlow' ('Clk nm rate) aEn bEn a b
-        -> DataFlow' ('Clk nm rate) (aEn,cEn) (bEn,cEn) (a,c) (b,c)
-firstDF (DF f) = DF (\ac acV bcR -> let clk       = sclock
-                                        (a,c)     = unbundle' clk ac
-                                        (aV,cV)   = unbundle' clk acV
-                                        (bR,cR)   = unbundle' clk bcR
+firstDF :: DataFlow' clk aEn bEn a b
+        -> DataFlow' clk (aEn,cEn) (bEn,cEn) (a,c) (b,c)
+firstDF (DF f) = DF (\ac acV bcR -> let (a,c)     = unbundle ac
+                                        (aV,cV)   = unbundle acV
+                                        (bR,cR)   = unbundle bcR
                                         (b,bV,aR) = f a aV bR
-                                        bc        = bundle' clk (b,c)
-                                        bcV       = bundle' clk (bV,cV)
-                                        acR       = bundle' clk (aR,cR)
+                                        bc        = bundle (b,c)
+                                        bcV       = bundle (bV,cV)
+                                        acR       = bundle (aR,cR)
                                     in  (bc,bcV,acR)
                     )
 
 -- | Swap the two communication channels.
 --
 -- <<doc/swapDF.svg>>
-swapDF :: DataFlow' ('Clk nm rate) (aEn,bEn) (bEn,aEn) (a,b) (b,a)
+swapDF :: DataFlow' clk (aEn,bEn) (bEn,aEn) (a,b) (b,a)
 swapDF = DF (\ab abV baR -> (swap <$> ab, swap <$> abV, swap <$> baR))
   where
     swap ~(a,b) = (b,a)
@@ -191,18 +186,16 @@ swapDF = DF (\ab abV baR -> (swap <$> ab, swap <$> abV, swap <$> baR))
 -- the first halve unchanged.
 --
 -- <<doc/secondDF.svg>>
-secondDF :: (KnownSymbol nm, KnownNat rate)
-         => DataFlow' ('Clk nm rate) aEn bEn a b
-         -> DataFlow' ('Clk nm rate) (cEn,aEn) (cEn,bEn) (c,a) (c,b)
+secondDF :: DataFlow' clk aEn bEn a b
+         -> DataFlow' clk (cEn,aEn) (cEn,bEn) (c,a) (c,b)
 secondDF f = swapDF `seqDF` firstDF f `seqDF` swapDF
 
 -- | Compose two 'DataFlow' circuits in parallel.
 --
 -- <<doc/parDF.svg>>
-parDF :: (KnownSymbol nm, KnownNat rate)
-      => DataFlow' ('Clk nm rate) aEn bEn a b
-      -> DataFlow' ('Clk nm rate) cEn dEn c d
-      -> DataFlow' ('Clk nm rate) (aEn,cEn) (bEn,dEn) (a,c) (b,d)
+parDF :: DataFlow' clk aEn bEn a b
+      -> DataFlow' clk cEn dEn c d
+      -> DataFlow' clk (aEn,cEn) (bEn,dEn) (a,c) (b,d)
 f `parDF` g = firstDF f `seqDF` secondDF g
 
 -- | Feed back the second halve of the communication channel.
@@ -220,24 +213,23 @@ f `parDF` g = firstDF f `seqDF` secondDF g
 -- operation.
 --
 -- <<doc/loopDF.svg>>
-loopDF :: forall nm rate a b d . (KnownSymbol nm, KnownNat rate)
-       => DataFlow' ('Clk nm rate) Bool Bool (a,d) (b,d)
-       -> DataFlow' ('Clk nm rate) Bool Bool a     b
+loopDF :: forall clk a b d .
+          DataFlow' clk Bool Bool (a,d) (b,d)
+       -> DataFlow' clk Bool Bool a     b
 loopDF f = loopDF' h
   where
-    h :: DataFlow' ('Clk nm rate) (Bool,Bool) (Bool,Bool) (a,d) (b,d)
+    h :: DataFlow' clk (Bool,Bool) (Bool,Bool) (a,d) (b,d)
     h = lockStep `seqDF` f `seqDF` stepLock
 
-    loopDF' :: DataFlow' ('Clk nm rate) (Bool,Bool) (Bool,Bool) (a,d) (b,d)
-            -> DataFlow' ('Clk nm rate) Bool Bool   a           b
-    loopDF' (DF f') = DF (\a aV bR -> let clk          = sclock
-                                          (bd,bdV,adR) = f' ad adV bdR
-                                          (b,d)        = unbundle' clk bd
-                                          (bV,dV)      = unbundle' clk bdV
-                                          (aR,dR)      = unbundle' clk adR
-                                          ad           = bundle' clk (a,d)
-                                          adV          = bundle' clk (aV,dV)
-                                          bdR          = bundle' clk (bR,dR)
+    loopDF' :: DataFlow' clk (Bool,Bool) (Bool,Bool) (a,d) (b,d)
+            -> DataFlow' clk Bool Bool   a           b
+    loopDF' (DF f') = DF (\a aV bR -> let (bd,bdV,adR) = f' ad adV bdR
+                                          (b,d)        = unbundle bd
+                                          (bV,dV)      = unbundle bdV
+                                          (aR,dR)      = unbundle adR
+                                          ad           = bundle (a,d)
+                                          adV          = bundle (aV,dV)
+                                          bdR          = bundle (bR,dR)
                                       in  (b,bV,aR)
                          )
 
@@ -297,8 +289,7 @@ class LockStep a b where
   -- @
   --
   -- Does the right thing.
-  lockStep :: (KnownNat rate,KnownSymbol nm)
-           => DataFlow' ('Clk nm rate) a Bool b b
+  lockStep :: DataFlow' clk a Bool b b
 
   -- | Extend the synchronisation granularity from a single 'Bool'ean value.
   --
@@ -354,8 +345,7 @@ class LockStep a b where
   -- @
   --
   -- Does the right thing.
-  stepLock :: (KnownNat rate,KnownSymbol nm)
-           => DataFlow' ('Clk nm rate) Bool a b b
+  stepLock :: DataFlow' clk Bool a b b
 
 instance LockStep Bool c where
   lockStep = idDF
@@ -363,19 +353,16 @@ instance LockStep Bool c where
 
 instance (LockStep a x, LockStep b y) => LockStep (a,b) (x,y) where
   lockStep = (lockStep `parDF` lockStep) `seqDF`
-                (DF (\xy xyV rdy -> let clk       = sclock
-                                        (xV,yV)   = unbundle' clk xyV
-                                        val       = xV .&&. yV
-                                        xR        = yV .&&. rdy
-                                        yR        = xV .&&. rdy
-                                        xyR       = bundle' clk (xR,yR)
+                (DF (\xy xyV rdy -> let (xV,yV) = unbundle xyV
+                                        val     = xV .&&. yV
+                                        xR      = yV .&&. rdy
+                                        yR      = xV .&&. rdy
+                                        xyR     = bundle (xR,yR)
                                     in  (xy,val,xyR)))
 
-  stepLock = (DF (\xy val xyR -> let clk     = sclock
-                                     (xR,yR) = unbundle' clk xyR
+  stepLock = (DF (\xy val xyR -> let (xR,yR) = unbundle xyR
                                      rdy     = xR  .&&. yR
                                      xV      = val .&&. yR
                                      yV      = val .&&. xR
-                                     xyV     = bundle' clk (xV,yV)
+                                     xyV     = bundle (xV,yV)
                                  in  (xy,xyV,rdy))) `seqDF` (stepLock `parDF` stepLock)
-

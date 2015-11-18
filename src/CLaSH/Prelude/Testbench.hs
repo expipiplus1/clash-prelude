@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# LANGUAGE Unsafe #-}
@@ -22,12 +24,12 @@ module CLaSH.Prelude.Testbench
 where
 
 import Debug.Trace           (trace)
-import GHC.TypeLits          (KnownNat)
+import GHC.TypeLits          (KnownNat, KnownSymbol)
 import Prelude               hiding ((!!))
 
-import CLaSH.Signal          (Signal, fromList)
-import CLaSH.Signal.Explicit (Signal', SClock, register', systemClock)
-import CLaSH.Signal.Bundle   (unbundle')
+import CLaSH.Signal.Explicit (sclock)
+import CLaSH.Signal.Internal (Clock (..), Signal', SClock, register#, fromList)
+import CLaSH.Signal.Bundle   (unbundle)
 import CLaSH.Sized.Index     (Index)
 import CLaSH.Sized.Vector    (Vec, (!!), maxIndex)
 
@@ -52,13 +54,13 @@ import CLaSH.Sized.Vector    (Vec, (!!), maxIndex)
 --
 --
 -- __NB__: This function /can/ be used in synthesizable designs.
-assert :: (Eq a,Show a)
+assert :: (Eq a,Show a,KnownNat period,KnownSymbol name)
        => String   -- ^ Additional message
-       -> Signal a -- ^ Checked value
-       -> Signal a -- ^ Expected value
-       -> Signal b -- ^ Return value
-       -> Signal b
-assert = assert' systemClock
+       -> Signal' ('Clk name period) a -- ^ Checked value
+       -> Signal' ('Clk name period) a -- ^ Expected value
+       -> Signal' ('Clk name period) b -- ^ Return value
+       -> Signal' ('Clk name period) b
+assert = assert' sclock
 
 {-# INLINE stimuliGenerator #-}
 -- | To be used as one of the functions to create the \"magical\" 'testInput'
@@ -74,10 +76,21 @@ assert = assert' systemClock
 --
 -- >>> sampleN 13 testInput
 -- [1,3,5,7,9,11,13,15,17,19,21,21,21]
-stimuliGenerator :: forall l a . KnownNat l
+stimuliGenerator :: forall l a clk . KnownNat l
                  => Vec l a  -- ^ Samples to generate
-                 -> Signal a -- ^ Signal of given samples
-stimuliGenerator = stimuliGenerator' systemClock
+                 -> Signal' clk a -- ^ Signal of given samples
+stimuliGenerator samples =
+    let (r,o) = unbundle (genT <$> register# 0 r)
+    in  o
+  where
+    genT :: Index l -> (Index l,a)
+    genT s = (s',samples !! s)
+      where
+        maxI = toEnum (maxIndex samples)
+
+        s' = if s < maxI
+                then s + 1
+                else s
 
 {-# INLINE outputVerifier #-}
 -- | To be used as one of the functions to generate the \"magical\" 'expectedOutput'
@@ -112,11 +125,12 @@ stimuliGenerator = stimuliGenerator' systemClock
 -- cycle(system1000): 9, outputVerifier
 -- expected value: 10, not equal to actual value: 9
 -- False,True,True]
-outputVerifier :: forall l a . (KnownNat l, Eq a, Show a)
+outputVerifier :: forall l a name period . 
+                  (KnownNat l, Eq a, Show a, KnownNat period, KnownSymbol name)
                => Vec l a     -- ^ Samples to compare with
-               -> Signal a    -- ^ Signal to verify
-               -> Signal Bool -- ^ Indicator that all samples are verified
-outputVerifier = outputVerifier' systemClock
+               -> Signal' ('Clk name period) a    -- ^ Signal to verify
+               -> Signal' ('Clk name period) Bool -- ^ Indicator that all samples are verified
+outputVerifier = outputVerifier' sclock
 
 {-# NOINLINE assert' #-}
 -- | Compares the first two 'Signal''s for equality and logs a warning when they
@@ -171,18 +185,7 @@ stimuliGenerator' :: forall l clk a . KnownNat l
                                     -- output signal
                   -> Vec l a        -- ^ Samples to generate
                   -> Signal' clk a  -- ^ Signal of given samples
-stimuliGenerator' clk samples =
-    let (r,o) = unbundle' clk (genT <$> register' clk 0 r)
-    in  o
-  where
-    genT :: Index l -> (Index l,a)
-    genT s = (s',samples !! s)
-      where
-        maxI = toEnum (maxIndex samples)
-
-        s' = if s < maxI
-                then s + 1
-                else s
+stimuliGenerator' _ = stimuliGenerator
 
 {-# INLINABLE outputVerifier' #-}
 -- | To be used as one of the functions to generate the \"magical\" 'expectedOutput'
@@ -229,9 +232,9 @@ outputVerifier' :: forall l clk a . (KnownNat l, Eq a, Show a)
                 -> Signal' clk a    -- ^ Signal to verify
                 -> Signal' clk Bool -- ^ Indicator that all samples are verified
 outputVerifier' clk samples i =
-    let (s,o) = unbundle' clk (genT <$> register' clk 0 s)
-        (e,f) = unbundle' clk o
-    in  assert' clk "outputVerifier" i e (register' clk False f)
+    let (s,o) = unbundle (genT <$> register#  0 s)
+        (e,f) = unbundle o
+    in  assert' clk "outputVerifier" i e (register# False f)
   where
     genT :: Index l -> (Index l,(a,Bool))
     genT s = (s',(samples !! s,finished))

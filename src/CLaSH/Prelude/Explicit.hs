@@ -4,7 +4,6 @@
 
 {-# LANGUAGE Unsafe #-}
 
-{-# OPTIONS_GHC -fno-warn-warnings-deprecations #-}
 {-# OPTIONS_HADDOCK show-extensions #-}
 
 {-|
@@ -60,16 +59,16 @@ module CLaSH.Prelude.Explicit
   )
 where
 
-import Data.Default                 (Default (..))
-import GHC.TypeLits                 (KnownNat, type (+), natVal)
-import Prelude                      hiding (repeat)
+import Data.Default                (Default)
+import GHC.TypeLits                (KnownNat, type (+))
 
+import CLaSH.Prelude               (window, windowD)
 import CLaSH.Prelude.Explicit.Safe
 import CLaSH.Prelude.BlockRam.File (blockRamFile', blockRamFilePow2')
 import CLaSH.Prelude.ROM.File      (romFile', romFilePow2')
 import CLaSH.Prelude.Testbench     (assert', stimuliGenerator', outputVerifier')
 import CLaSH.Signal.Explicit
-import CLaSH.Sized.Vector          (Vec (..), (+>>), asNatProxy, repeat)
+import CLaSH.Sized.Vector          (Vec)
 
 {- $setup
 >>> :set -XDataKinds
@@ -99,13 +98,7 @@ window' :: (KnownNat n, Default a)
                                        -- signal is synchronized
         -> Signal' clk a               -- ^ Signal to create a window over
         -> Vec (n + 1) (Signal' clk a) -- ^ Window of at least size 1
-window' clk x = res
-  where
-    res  = x `Cons` prev
-    prev = case natVal (asNatProxy prev) of
-             0 -> repeat def
-             _ -> let next = x +>> prev
-                  in  registerB' clk (repeat def) next
+window' _ = window 
 
 {-# INLINABLE windowD' #-}
 -- | Give a delayed window over a 'Signal''
@@ -127,7 +120,4 @@ windowD' :: (KnownNat (n + 1), Default a)
                                          -- is synchronized
          -> Signal' clk a                -- ^ Signal to create a window over
          -> Vec (n + 1) (Signal' clk a)  -- ^ Window of at least size 1
-windowD' clk x = prev
-  where
-    prev = registerB' clk (repeat def) next
-    next = x +>> prev
+windowD' _ = windowD 

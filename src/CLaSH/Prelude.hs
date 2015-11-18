@@ -5,6 +5,7 @@
 
 {-# LANGUAGE Unsafe #-}
 
+{-# OPTIONS_GHC -fno-warn-warnings-deprecations #-}
 {-# OPTIONS_HADDOCK show-extensions #-}
 
 {-|
@@ -142,7 +143,6 @@ import CLaSH.Prelude.BitIndex
 import CLaSH.Prelude.BitReduction
 import CLaSH.Prelude.BlockRam.File (blockRamFile, blockRamFilePow2)
 import CLaSH.Prelude.DataFlow
-import CLaSH.Prelude.Explicit      (window', windowD')
 import CLaSH.Prelude.ROM.File      (asyncRomFile,asyncRomFilePow2,romFile,
                                     romFilePow2)
 import CLaSH.Prelude.Safe
@@ -159,7 +159,7 @@ import CLaSH.Sized.Unsigned
 import CLaSH.Sized.Vector
 import CLaSH.Signal
 import CLaSH.Signal.Delayed
-import CLaSH.Signal.Explicit       (systemClock)
+import CLaSH.Signal.Explicit       (Signal')
 
 {- $setup
 >>> :set -XDataKinds
@@ -187,9 +187,15 @@ It instead exports the identically named functions defined in terms of
 -- >>> simulateB window4 [1::Int,2,3,4,5] :: [Vec 4 Int]
 -- [<1,0,0,0>,<2,1,0,0>,<3,2,1,0>,<4,3,2,1>,<5,4,3,2>...
 window :: (KnownNat n, Default a)
-       => Signal a                -- ^ Signal to create a window over
-       -> Vec (n + 1) (Signal a)  -- ^ Window of at least size 1
-window = window' systemClock
+       => Signal' clk a                -- ^ Signal to create a window over
+       -> Vec (n + 1) (Signal' clk a)  -- ^ Window of at least size 1
+window x = res
+  where
+    res  = x `Cons` prev
+    prev = case natVal (asNatProxy prev) of
+             0 -> repeat def
+             _ -> let next = x +>> prev
+                  in  registerB (repeat def) next
 
 {-# INLINE windowD #-}
 -- | Give a delayed window over a 'Signal'
@@ -200,6 +206,9 @@ window = window' systemClock
 -- >>> simulateB windowD3 [1::Int,2,3,4] :: [Vec 3 Int]
 -- [<0,0,0>,<1,0,0>,<2,1,0>,<3,2,1>,<4,3,2>...
 windowD :: (KnownNat (n + 1), Default a)
-        => Signal a               -- ^ Signal to create a window over
-        -> Vec (n + 1) (Signal a) -- ^ Window of at least size 1
-windowD = windowD' systemClock
+        => Signal' clk a               -- ^ Signal to create a window over
+        -> Vec (n + 1) (Signal' clk a) -- ^ Window of at least size 1
+windowD x = prev
+  where
+    prev = registerB (repeat def) next
+    next = x +>> prev

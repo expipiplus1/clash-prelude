@@ -231,14 +231,14 @@ not1 :: Functor f => f Bool -> f Bool
 not1 = fmap not
 
 {-# NOINLINE register# #-}
-register# :: SClock clk -> a -> Signal' clk a -> Signal' clk a
-register# _ i s = i :- s
+register# :: a -> Signal' clk a -> Signal' clk a
+register# i s = i :- s
 
 {-# NOINLINE regEn# #-}
-regEn# :: SClock clk -> a -> Signal' clk Bool -> Signal' clk a -> Signal' clk a
-regEn# clk i b s = r
+regEn# :: a -> Signal' clk Bool -> Signal' clk a -> Signal' clk a
+regEn# i b s = r
   where
-    r  = register# clk i s'
+    r  = register# i s'
     s' = mux b s r
 
 {-# INLINE mux #-}

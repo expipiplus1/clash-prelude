@@ -3,7 +3,7 @@
 {-# LANGUAGE MagicHash        #-}
 {-# LANGUAGE TypeOperators    #-}
 
-{-# LANGUAGE Safe #-}
+{-# LANGUAGE Trustworthy #-}
 
 {-# OPTIONS_HADDOCK show-extensions #-}
 
@@ -361,9 +361,8 @@ import Data.Array.MArray.Safe (newListArray,readArray,writeArray)
 import Data.Array.ST.Safe     (STArray)
 import GHC.TypeLits           (KnownNat, type (^))
 
-import CLaSH.Signal           (Signal)
-import CLaSH.Signal.Explicit  (Signal', SClock, register', systemClock)
-import CLaSH.Signal.Bundle    (bundle')
+import CLaSH.Signal.Bundle    (bundle)
+import CLaSH.Signal.Internal  (Signal', SClock, register#)
 import CLaSH.Sized.Unsigned   (Unsigned)
 import CLaSH.Sized.Vector     (Vec, maxIndex, toList)
 
@@ -388,14 +387,15 @@ blockRam :: (KnownNat n, Enum addr)
                         -- determines the size, @n@, of the BRAM.
                         --
                         -- __NB__: __MUST__ be a constant.
-         -> Signal addr -- ^ Write address @w@
-         -> Signal addr -- ^ Read address @r@
-         -> Signal Bool -- ^ Write enable
-         -> Signal a    -- ^ Value to write (at address @w@)
-         -> Signal a
+         -> Signal' clk addr -- ^ Write address @w@
+         -> Signal' clk addr -- ^ Read address @r@
+         -> Signal' clk Bool -- ^ Write enable
+         -> Signal' clk a    -- ^ Value to write (at address @w@)
+         -> Signal' clk a
          -- ^ Value of the @blockRAM@ at address @r@ from the previous clock
          -- cycle
-blockRam = blockRam' systemClock
+blockRam content wr rd en din = blockRam# content (fromEnum <$> wr)
+                                          (fromEnum <$> rd) en din
 
 {-# INLINE blockRamPow2 #-}
 -- | Create a blockRAM with space for 2^@n@ elements
@@ -418,11 +418,11 @@ blockRamPow2 :: (KnownNat (2^n), KnownNat n)
                                     -- determines the size, @2^n@, of the BRAM.
                                     --
                                     -- __NB__: __MUST__ be a constant.
-             -> Signal (Unsigned n) -- ^ Write address @w@
-             -> Signal (Unsigned n) -- ^ Read address @r@
-             -> Signal Bool         -- ^ Write enable
-             -> Signal a            -- ^ Value to write (at address @w@)
-             -> Signal a
+             -> Signal' clk (Unsigned n) -- ^ Write address @w@
+             -> Signal' clk (Unsigned n) -- ^ Read address @r@
+             -> Signal' clk Bool         -- ^ Write enable
+             -> Signal' clk a            -- ^ Value to write (at address @w@)
+             -> Signal' clk a
              -- ^ Value of the @blockRAM@ at address @r@ from the previous clock
              -- cycle
 blockRamPow2 = blockRam
@@ -461,8 +461,7 @@ blockRam' :: (KnownNat n, Enum addr)
           -> Signal' clk a
           -- ^ Value of the @blockRAM@ at address @r@ from the previous clock
           -- cycle
-blockRam' clk content wr rd en din = blockRam# clk content (fromEnum <$> wr)
-                                               (fromEnum <$> rd) en din
+blockRam' _ = blockRam
 
 {-# INLINE blockRamPow2' #-}
 -- | Create a blockRAM with space for 2^@n@ elements
@@ -504,8 +503,7 @@ blockRamPow2' = blockRam'
 {-# NOINLINE blockRam# #-}
 -- | blockRAM primitive
 blockRam# :: KnownNat n
-          => SClock clk       -- ^ 'Clock' to synchronize to
-          -> Vec n a          -- ^ Initial content of the BRAM, also
+          => Vec n a          -- ^ Initial content of the BRAM, also
                               -- determines the size, @n@, of the BRAM.
                               --
                               -- __NB__: __MUST__ be a constant.
@@ -516,12 +514,12 @@ blockRam# :: KnownNat n
           -> Signal' clk a
           -- ^ Value of the @blockRAM@ at address @r@ from the previous clock
           -- cycle
-blockRam# clk content wr rd en din = register' clk undefined dout
+blockRam# content wr rd en din = register# undefined dout
   where
     szI  = maxIndex content
     dout = runST $ do
       arr <- newListArray (0,szI) (toList content)
-      traverse (ramT arr) (bundle' clk (wr,rd,en,din))
+      traverse (ramT arr) (bundle (wr,rd,en,din))
 
     ramT :: STArray s Int e -> (Int,Int,Bool,e) -> ST s e
     ramT ram (w,r,e,d) = do

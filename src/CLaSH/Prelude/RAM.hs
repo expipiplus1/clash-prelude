@@ -39,12 +39,11 @@ import Control.Monad          (when)
 import Control.Monad.ST.Lazy  (ST,runST)
 import Data.Array.MArray.Safe (newArray_,readArray,writeArray)
 import Data.Array.ST.Safe     (STArray)
-import GHC.TypeLits           (KnownNat, type (^))
+import GHC.TypeLits           (KnownNat, KnownSymbol, type (^))
 
 import CLaSH.Promoted.Nat     (SNat,snat,snatToInteger)
-import CLaSH.Signal           (Signal)
-import CLaSH.Signal.Bundle    (bundle')
-import CLaSH.Signal.Explicit  (Signal', SClock, systemClock, unsafeSynchronizer)
+import CLaSH.Signal.Explicit  (Clock (..), Signal', SClock, bundle', sclock, 
+                               unsafeSynchronizer)
 import CLaSH.Sized.Unsigned   (Unsigned)
 
 {-# INLINE asyncRam #-}
@@ -56,14 +55,14 @@ import CLaSH.Sized.Unsigned   (Unsigned)
 --
 -- * See "CLaSH.Prelude.BlockRam#usingrams" for more information on how to use a
 -- RAM.
-asyncRam :: Enum addr
+asyncRam :: (Enum addr, KnownSymbol name, KnownNat period)
          => SNat n      -- ^ Size @n@ of the RAM
-         -> Signal addr -- ^ Write address @w@
-         -> Signal addr -- ^ Read address @r@
-         -> Signal Bool -- ^ Write enable
-         -> Signal a    -- ^ Value to write (at address @w@)
-         -> Signal a    -- ^ Value of the @RAM@ at address @r@
-asyncRam = asyncRam' systemClock systemClock
+         -> Signal' ('Clk name period) addr -- ^ Write address @w@
+         -> Signal' ('Clk name period) addr -- ^ Read address @r@
+         -> Signal' ('Clk name period) Bool -- ^ Write enable
+         -> Signal' ('Clk name period) a    -- ^ Value to write (at address @w@)
+         -> Signal' ('Clk name period) a    -- ^ Value of the @RAM@ at address @r@
+asyncRam = asyncRam' sclock sclock
 
 {-# INLINE asyncRamPow2 #-}
 -- | Create a RAM with space for 2^@n@ elements
@@ -74,13 +73,14 @@ asyncRam = asyncRam' systemClock systemClock
 --
 -- * See "CLaSH.Prelude.BlockRam#usingrams" for more information on how to use a
 -- RAM.
-asyncRamPow2 :: forall n a . (KnownNat (2^n), KnownNat n)
-             => Signal (Unsigned n) -- ^ Write address @w@
-             -> Signal (Unsigned n) -- ^ Read address @r@
-             -> Signal Bool         -- ^ Write enable
-             -> Signal a            -- ^ Value to write (at address @w@)
-             -> Signal a            -- ^ Value of the @RAM@ at address @r@
-asyncRamPow2 = asyncRam' systemClock systemClock (snat :: SNat (2^n))
+asyncRamPow2 :: forall n a name period . 
+                (KnownNat (2^n), KnownNat n, KnownSymbol name, KnownNat period)
+             => Signal' ('Clk name period) (Unsigned n) -- ^ Write address @w@
+             -> Signal' ('Clk name period) (Unsigned n) -- ^ Read address @r@
+             -> Signal' ('Clk name period) Bool         -- ^ Write enable
+             -> Signal' ('Clk name period) a            -- ^ Value to write (at address @w@)
+             -> Signal' ('Clk name period) a            -- ^ Value of the @RAM@ at address @r@
+asyncRamPow2 = asyncRam' sclock sclock (snat :: SNat (2^n))
 
 {-# INLINE asyncRamPow2' #-}
 -- | Create a RAM with space for 2^@n@ elements

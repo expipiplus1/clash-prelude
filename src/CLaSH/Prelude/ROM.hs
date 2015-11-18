@@ -3,7 +3,7 @@
 {-# LANGUAGE MagicHash        #-}
 {-# LANGUAGE TypeOperators    #-}
 
-{-# LANGUAGE Safe #-}
+{-# LANGUAGE Trustworthy #-}
 
 {-# OPTIONS_HADDOCK show-extensions #-}
 
@@ -33,10 +33,8 @@ where
 import Data.Array             ((!),listArray)
 import GHC.TypeLits           (KnownNat, type (^))
 
-import CLaSH.Signal           (Signal)
-import CLaSH.Signal.Explicit  (Signal', SClock, systemClock)
+import CLaSH.Signal.Internal  (Signal', SClock, register#)
 import CLaSH.Sized.Unsigned   (Unsigned)
-import CLaSH.Signal.Explicit  (register')
 import CLaSH.Sized.Vector     (Vec, maxIndex, toList)
 
 {-# INLINE asyncRom #-}
@@ -92,13 +90,13 @@ asyncRom# content rd = arr ! rd
 --
 -- * See "CLaSH.Sized.Fixed#creatingdatafiles" and "CLaSH.Prelude.BlockRam#usingrams"
 -- for ideas on how to use ROMs and RAMs
-rom :: (KnownNat n, KnownNat m)
+rom :: (KnownNat n, Enum addr)
     => Vec n a               -- ^ ROM content
                              --
                              -- __NB:__ must be a constant
-    -> Signal (Unsigned m)   -- ^ Read address @rd@
-    -> Signal a              -- ^ The value of the ROM at address @rd@
-rom = rom' systemClock
+    -> Signal' clk addr      -- ^ Read address @rd@
+    -> Signal' clk a              -- ^ The value of the ROM at address @rd@
+rom content rd = rom# content (fromEnum <$> rd)
 
 {-# INLINE romPow2 #-}
 -- | A ROM with a synchronous read port, with space for 2^@n@ elements
@@ -114,9 +112,9 @@ romPow2 :: (KnownNat (2^n), KnownNat n)
         => Vec (2^n) a         -- ^ ROM content
                                --
                                -- __NB:__ must be a constant
-        -> Signal (Unsigned n) -- ^ Read address @rd@
-        -> Signal a            -- ^ The value of the ROM at address @rd@
-romPow2 = rom' systemClock
+        -> Signal' clk (Unsigned n) -- ^ Read address @rd@
+        -> Signal' clk a            -- ^ The value of the ROM at address @rd@
+romPow2 = rom
 
 {-# INLINE romPow2' #-}
 -- | A ROM with a synchronous read port, with space for 2^@n@ elements
@@ -135,7 +133,7 @@ romPow2' :: (KnownNat (2^n), KnownNat n)
                                      -- __NB:__ must be a constant
          -> Signal' clk (Unsigned n) -- ^ Read address @rd@
          -> Signal' clk a            -- ^ The value of the ROM at address @rd@
-romPow2' = rom'
+romPow2' _ = rom
 
 {-# INLINE rom' #-}
 -- | A ROM with a synchronous read port, with space for @n@ elements
@@ -155,19 +153,18 @@ rom' :: (KnownNat n, Enum addr)
      -> Signal' clk addr -- ^ Read address @rd@
      -> Signal' clk a
      -- ^ The value of the ROM at address @rd@ from the previous clock cycle
-rom' clk content rd = rom# clk content (fromEnum <$> rd)
+rom' _ = rom
 
 {-# NOINLINE rom# #-}
 -- | ROM primitive
 rom# :: KnownNat n
-     => SClock clk      -- ^ 'Clock' to synchronize to
-     -> Vec n a         -- ^ ROM content
+     => Vec n a         -- ^ ROM content
                         --
                         -- __NB:__ must be a constant
      -> Signal' clk Int -- ^ Read address @rd@
      -> Signal' clk a
      -- ^ The value of the ROM at address @rd@ from the previous clock cycle
-rom# clk content rd = register' clk undefined ((arr !) <$> rd)
+rom# content rd = register# undefined ((arr !) <$> rd)
   where
     szI = maxIndex content
     arr = listArray (0,szI) (toList content)

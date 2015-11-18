@@ -1,4 +1,6 @@
-{-# LANGUAGE Safe #-}
+{-# LANGUAGE MagicHash #-}
+
+{-# LANGUAGE Trustworthy #-}
 
 {-|
   Copyright  :  (C) 2013-2015, University of Twente
@@ -21,9 +23,8 @@ module CLaSH.Prelude.Moore
   )
 where
 
-import CLaSH.Signal          (Signal, Unbundled)
-import CLaSH.Signal.Explicit (Signal', SClock, register', systemClock)
-import CLaSH.Signal.Bundle   (Bundle (..), Unbundled')
+import CLaSH.Signal.Internal (Signal', SClock, register#)
+import CLaSH.Signal.Bundle   (Bundle (..))
 
 {- $setup
 >>> :set -XDataKinds
@@ -75,10 +76,12 @@ moore :: (s -> i -> s) -- ^ Transfer function in moore machine form:
       -> (s -> o)      -- ^ Output function in moore machine form:
                        -- @state -> output@
       -> s             -- ^ Initial state
-      -> (Signal i -> Signal o)
+      -> (Signal' clk i -> Signal' clk o)
       -- ^ Synchronous sequential function with input and output matching that
       -- of the moore machine
-moore = moore' systemClock
+moore ft fo iS = \i -> let s' = ft <$> s <*> i
+                           s  = register# iS s'
+                       in fo <$> s
 
 {-# INLINE mooreB #-}
 -- | A version of 'moore' that does automatic 'Bundle'ing
@@ -114,10 +117,10 @@ mooreB :: (Bundle i, Bundle o)
       -> (s -> o)      -- ^ Output function in moore machine form:
                        -- @state -> output@
       -> s             -- ^ Initial state
-      -> (Unbundled i -> Unbundled o)
+      -> (Unbundled' clk i -> Unbundled' clk o)
        -- ^ Synchronous sequential function with input and output matching that
        -- of the moore machine
-mooreB = mooreB' systemClock
+mooreB ft fo iS i = unbundle (moore ft fo iS (bundle i))
 
 {-# INLINABLE moore' #-}
 -- | Create a synchronous function from a combinational function describing
@@ -162,9 +165,7 @@ moore' :: SClock clk    -- ^ 'Clock' to synchronize to
        -> (Signal' clk i -> Signal' clk o)
        -- ^ Synchronous sequential function with input and output matching that
        -- of the moore machine
-moore' clk ft fo iS = \i -> let s' = ft <$> s <*> i
-                                s  = register' clk iS s'
-                        in fo <$> s
+moore' _ = moore 
 
 {-# INLINE mooreB' #-}
 -- | A version of 'moore'' that does automatic 'Bundle'ing
@@ -204,4 +205,4 @@ mooreB' :: (Bundle i, Bundle o)
         -> (Unbundled' clk i -> Unbundled' clk o)
         -- ^ Synchronous sequential function with input and output matching that
         -- of the moore machine
-mooreB' clk ft fo iS i = unbundle' clk (moore' clk ft fo iS (bundle' clk i))
+mooreB' _ = mooreB 

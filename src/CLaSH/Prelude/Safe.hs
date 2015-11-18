@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators    #-}
 
-{-# LANGUAGE Safe #-}
+{-# LANGUAGE Trustworthy #-}
 
 {-# OPTIONS_HADDOCK show-extensions #-}
 
@@ -117,7 +117,6 @@ import CLaSH.Class.Resize
 import CLaSH.Prelude.BitIndex
 import CLaSH.Prelude.BitReduction
 import CLaSH.Prelude.BlockRam      (blockRam, blockRamPow2)
-import CLaSH.Prelude.Explicit.Safe (registerB', isRising', isFalling')
 import CLaSH.Prelude.Mealy         (mealy, mealyB, (<^>))
 import CLaSH.Prelude.Moore         (moore, mooreB)
 import CLaSH.Prelude.RAM           (asyncRam,asyncRamPow2)
@@ -135,7 +134,7 @@ import CLaSH.Sized.Unsigned
 import CLaSH.Sized.Vector
 import CLaSH.Signal
 import CLaSH.Signal.Delayed
-import CLaSH.Signal.Explicit       (systemClock)
+import CLaSH.Signal.Internal       (Signal')
 
 {- $setup
 >>> let rP = registerB (8,8)
@@ -159,21 +158,27 @@ It instead exports the identically named functions defined in terms of
 --
 -- >>> simulateB rP [(1,1),(2,2),(3,3)] :: [(Int,Int)]
 -- [(8,8),(1,1),(2,2),(3,3)...
-registerB :: Bundle a => a -> Unbundled a -> Unbundled a
-registerB = registerB' systemClock
+registerB :: Bundle a => a -> Unbundled' clk a -> Unbundled' clk a
+registerB i = unbundle Prelude.. register i Prelude.. bundle
 
 {-# INLINE isRising #-}
 -- | Give a pulse when the 'Signal' goes from 'minBound' to 'maxBound'
 isRising :: (Bounded a, Eq a)
          => a -- ^ Starting value
-         -> Signal a
-         -> Signal Bool
-isRising = isRising' systemClock
+         -> Signal' clk a
+         -> Signal' clk Bool
+isRising is s = liftA2 edgeDetect prev s
+  where
+    prev = register is s
+    edgeDetect old new = old == minBound && new == maxBound
 
 {-# INLINE isFalling #-}
 -- | Give a pulse when the 'Signal' goes from 'maxBound' to 'minBound'
 isFalling :: (Bounded a, Eq a)
           => a -- ^ Starting value
-          -> Signal a
-          -> Signal Bool
-isFalling = isFalling' systemClock
+          -> Signal' clk a
+          -> Signal' clk Bool
+isFalling is s = liftA2 edgeDetect prev s
+  where
+    prev = register is s
+    edgeDetect old new = old == maxBound && new == minBound

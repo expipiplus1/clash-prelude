@@ -49,7 +49,6 @@ module CLaSH.Prelude.Explicit.Safe
   )
 where
 
-import Control.Applicative        (liftA2)
 import Prelude                    hiding (repeat)
 
 import CLaSH.Prelude.BlockRam     (blockRam', blockRamPow2')
@@ -57,8 +56,10 @@ import CLaSH.Prelude.Mealy        (mealy', mealyB')
 import CLaSH.Prelude.Moore        (moore', mooreB')
 import CLaSH.Prelude.RAM          (asyncRam',asyncRamPow2')
 import CLaSH.Prelude.ROM          (rom', romPow2')
+import CLaSH.Prelude.Safe         (registerB, isRising, isFalling)
 import CLaSH.Prelude.Synchronizer (dualFlipFlopSynchronizer,
                                    asyncFIFOSynchronizer)
+import CLaSH.Signal.Bundle        (Bundle)
 import CLaSH.Signal.Explicit
 
 {- $setup
@@ -85,7 +86,7 @@ import CLaSH.Signal.Explicit
 -- >>> simulateB' clkA clkA rP [(1,1),(2,2),(3,3)] :: [(Int,Int)]
 -- [(8,8),(1,1),(2,2),(3,3)...
 registerB' :: Bundle a => SClock clk -> a -> Unbundled' clk a -> Unbundled' clk a
-registerB' clk i = unbundle' clk Prelude.. register' clk i Prelude.. bundle' clk
+registerB' _ = registerB
 
 {-# INLINABLE isRising' #-}
 -- | Give a pulse when the 'Signal'' goes from 'minBound' to 'maxBound'
@@ -94,10 +95,7 @@ isRising' :: (Bounded a, Eq a)
           -> a -- ^ Starting value
           -> Signal' clk a
           -> Signal' clk Bool
-isRising' clk is s = liftA2 edgeDetect prev s
-  where
-    prev = register' clk is s
-    edgeDetect old new = old == minBound && new == maxBound
+isRising' _ = isRising 
 
 {-# INLINABLE isFalling' #-}
 -- | Give a pulse when the 'Signal'' goes from 'maxBound' to 'minBound'
@@ -106,7 +104,4 @@ isFalling' :: (Bounded a, Eq a)
            -> a -- ^ Starting value
            -> Signal' clk a
            -> Signal' clk Bool
-isFalling' clk is s = liftA2 edgeDetect prev s
-  where
-    prev = register' clk is s
-    edgeDetect old new = old == maxBound && new == minBound
+isFalling' _ = isFalling
