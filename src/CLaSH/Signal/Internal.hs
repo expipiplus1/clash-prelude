@@ -149,7 +149,7 @@ signal# a = let s = a :- s in s
 
 {-# NOINLINE appSignal# #-}
 appSignal# :: Signal' clk (a -> b) -> Signal' clk a -> Signal' clk b
-appSignal# (f :- fs) ~(a :- as) = f a :- appSignal# fs as
+appSignal# (f :- fs) (a :- as) = f a :- appSignal# fs as
 
 {-# NOINLINE joinSignal# #-}
 -- | __WARNING: EXTREMELY EXPERIMENTAL__
